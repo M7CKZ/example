@@ -1,0 +1,662 @@
+/*
+  на проекте был сломан перенос колонок в используемой библиотеке, который ломает весь интерфейс,
+  реализация поверх библиотеки восстанавливает перенос колонок с некоторыми ограничениями + 
+  добавляет возможность переносить колонки с общим заголовком любого уровня вложенности
+*/
+
+/**
+ * @important
+ * Функционал завязан на работе вебикса на текущий момент (8.0 бесплатная версия)
+ */
+
+export const add_columns_drag_and_drop = function (_this) {
+  //общий объект для обмена данными
+  let baseObj = new events(_this)
+
+  //событие перед тем как взять колонку
+  new beforeDragEvent(baseObj.table, baseObj)
+  
+  //событие перед отпусканием колонки
+  new beforeDropEvent(baseObj.table, baseObj)
+
+  //событие после отпускания колонки
+  new afterDropEvent(baseObj.table, baseObj)
+}
+
+//Базовый класс события
+class events {
+
+  //тип столбца для проверки
+  #checkType = {
+    current: 'current',
+    target: 'target'
+  }
+
+  //тип стартовой позиции колонки
+  #startPositionType = {
+    right: 'right',
+    left: 'left'
+  }
+
+  //стартовая позиция
+  #startPosition
+
+  //карта всех заголовков
+  #headerMap
+
+  //базовый объект, куда пишем общую информацию
+  #baseObj
+
+  //контекст (таблица)
+  #table
+
+  //состояние таблицы перед переносом колонки
+  #oldTableState
+
+  //название заголовка текущей колонки
+  #currentColName
+
+  //идентификатор текущей колонки
+  #currentColId
+
+  //название целевой колонки, на которую идет перемещение
+  #targetColName
+
+  //идентификатор целевой колонки
+  #targetColId
+
+  //родительское наименование колонки
+  #parentColName
+
+  //идентификатор столбца для проверки
+  #checkId
+
+  //наименование столбца для проверка
+  #checkName
+
+  //текущий выбранный тип столбца для проверки
+  #selectedCheckType
+
+  //список колонок для перемещения текущей целевой колонки
+  #currentMoveColList
+
+  //список конфигов текущих переносимых колонок
+  #oldColListConfigs
+
+  //список колонок, на которую возможен перенос
+  #availableToDropColList
+
+  //контруктор входящих данных
+  constructor(table, obj) {
+    this.table = table
+    this.baseObj = obj
+
+    // если не задан общий объект (obj), то создается базовый объект - строим для него карту заголовков
+    !obj && this.make_headers_map()
+  }
+
+  //карта всех заголовков
+  set headerMap(map) {
+    this.#headerMap = map
+  }
+
+  //карта всех заголовков
+  get headerMap() {
+    return this.#headerMap
+  }
+
+  //установка контекста
+  set table(table) {
+    this.#table = table
+  }
+
+  //получение контекста
+  get table() {
+    return this.#table
+  }
+
+  //состояние таблице перед переносом колонки
+  set oldTableState(state) {
+    this.#oldTableState = JSON.parse(JSON.stringify(state))
+  }
+
+  //состояние таблице перед переносом колонки
+  get oldTableState() {
+    return this.#oldTableState
+  }
+
+  //пишем базовый объект
+  set baseObj(obj) {
+    this.#baseObj = obj
+  }
+
+  //читаем базовый объект
+  get baseObj() {
+    return this.#baseObj
+  }
+
+  //название взятого заголовка колонки
+  set currentColName(name) {
+    this.#currentColName = name
+  }
+
+  //название взятого заголовка колонки
+  get currentColName() {
+    return this.#currentColName
+  }
+
+  //идентификатор текущей колонки
+  set currentColId(id) {
+    this.#currentColId = id
+  }
+
+  //идентификатор текущей колонки
+  get currentColId() {
+    return this.#currentColId
+  }
+
+  //название взятого заголовка колонки
+  set targetColName(name) {
+    this.#targetColName = name
+  }
+
+  //название целевого заголовка колонки
+  get targetColName() {
+    return this.#targetColName
+  }
+
+  //идентификатор целевой колонки
+  set targetColId(id) {
+    this.#targetColId = id
+  }
+
+  //идентификатор целевой колонки
+  get targetColId() {
+    return this.#targetColId
+  }
+
+  //родительское наименование колонки
+  set parentColName(name) {
+    this.#parentColName = name
+  }
+
+  //родительское наименование колонки
+  get parentColName() {
+    return this.#parentColName
+  }
+
+  //идентификатор столбца для проверки
+  set checkId(id) {
+    this.#checkId = id
+  }
+
+  //идентификатор столбца для проверки
+  get checkId() {
+    return this.#checkId
+  }
+
+  //наименование столбца для проверки
+  set checkName(name) {
+    this.#checkName = name
+  }
+
+  //наименование столбца для проверки
+  get checkName() {
+    return this.#checkName
+  }
+
+  //тип столбца для проверки
+  get checkType() {
+    return this.#checkType
+  }
+
+  //тип стартовой позиции
+  get startPositionType() {
+    return this.#startPositionType
+  }
+
+  //стартовая позиция
+  set startPosition(position) {
+    this.#startPosition = position
+  }
+
+  //стартовая позиция
+  get startPosition() {
+    return this.#startPosition
+  }
+
+  //текущий выбранный тип столбца для проверки
+  set selectedCheckType(type) {
+    this.#selectedCheckType = type
+    this.set_check_data()
+  }
+  
+  //текущий выбранный тип столбца для проверки
+  get selectedCheckType() {
+    return this.#selectedCheckType
+  }
+
+  //список доступных колонок для переноса на нее
+  set availableToDropColList(colList) {
+    this.#availableToDropColList = colList
+  }
+
+  //список доступных колонок для переноса на нее
+  get availableToDropColList() {
+    return this.#availableToDropColList
+  }
+
+  //список текущих переносимых колонок
+  set currentMoveColList(colList) {
+    this.#currentMoveColList = colList
+  }
+
+  //список текущих переносимых колонок
+  get currentMoveColList() {
+    return this.#currentMoveColList
+  }
+
+  //список конфигов текущих переносимых колонок
+  set oldColListConfigs(configs) {
+    this.#oldColListConfigs = configs
+  }
+
+  //список конфигов текущих переносимых колонок
+  get oldColListConfigs() {
+    return this.#oldColListConfigs
+  }
+
+  //исходный список колонок
+  get allColumnsList() {
+    return this.table.getState().order
+  }
+  
+  //только видимые колонки
+  get visibleColumnsList() {
+    return this.table.getState().ids
+  }
+
+  //массив конфигов только видимых колонок
+  get visibleColumnsConfigList() {
+    return this.table.config.columns
+  }
+
+  //только скрытые колонки
+  get hiddenColumnsList() {
+    return this.table.getState().hidden
+  }
+
+  //установка данных для проверки
+  set_check_data() {
+    this.checkId = this[`${this.selectedCheckType}ColId`]
+    this.checkName = this[`${this.selectedCheckType}ColName`]
+  }
+
+  //индекс колонки
+  get_col_index = (id) => this.table.getColumnIndex(id)
+
+  //карта заголовков
+  make_headers_map() {
+    //скрытые столбцы
+    const _hidden_cols = JSON.parse(JSON.stringify(this.hiddenColumnsList))
+    //все столбцы
+    const _allCols = this.allColumnsList
+    //таблица
+    const _table = this.table
+    //карта
+    const _map = new Map()
+    //глубина вложенности
+    let _depth = 0
+
+    if(!_table.isVisible()) {
+      return
+    }
+
+    //отображаем все столбцы для построения карты
+    _hidden_cols.forEach((col) => col && this.table.showColumn(col))
+
+    //формируем карту
+    for(let i = 0; i < _allCols.length; i++) {
+      //конфиг столбца
+      const _cfg = _table.getColumnConfig(_allCols[i])
+      //заголовки столбца
+      const _header = _cfg.header
+      //глубина заголовка
+      if(!_depth) _depth = _header.length
+
+      if(_header[0] && !_header.slice(1).some((hdr) => hdr)) {
+        //если столбец 1 сам по себе
+        _map.set(_header[0].text, {level: 0, cols: [_allCols[i]]})
+      } else {
+        //иначе собираем подзаголовки по каждому заголовку
+        _header.forEach((hdr, index) => hdr?.colspan && _map.set(hdr.text, {level: index, cols: _allCols.slice(i, hdr.colspan + i)}))
+      }
+    }
+
+    //пробегаемся начиная с самого нижнего подзаголовка
+    for(let i = _depth; i > 0; i--) {
+      _map.forEach((value, key) => {
+        //если заголовок на самом нижнем уровне
+        if(value.level === i) {
+          _map.forEach((value2, key2) => {
+            //если есть родитель уровнем выше по совпадению дочерней колонки - привязываем
+            if(value2.level === i - 1 && value.cols.some((col) => value2.cols.includes(col))) {
+              _map.set(key, {...value, parent: key2, isFirst: value.cols.includes(value2.cols[0])})
+            }
+          })
+        }
+      })
+    }
+
+    //скрываем обратно столбцы
+    _hidden_cols.forEach((col) => col && this.table.hideColumn(col))
+
+    this.headerMap =  _map
+  }
+
+}
+
+//Событие перед тем как взять колонку
+class beforeDragEvent extends events {
+
+  //контруктор входящих данных
+  constructor(table, event) {
+    //переопределение базового конктруктора
+    super(table, event)
+    //вешаем событие
+    this.table.attachEvent('onBeforeColumnDrag', this.on_before_column_drag.bind(this))
+  }
+
+  on_before_column_drag(currentColId, event) {
+    //перестраиваем карту заголовков
+    this.baseObj.make_headers_map()
+
+    //идентификатор взятой колонки
+    this.baseObj.currentColId = currentColId
+
+    //сохраняем название взятой колонки
+    this.baseObj.currentColName = event?.target?.outerText
+
+    //устанавливае тип + проверяемую колонку
+    this.baseObj.selectedCheckType = this.checkType.current
+
+    //запрещаем переносить первый столбец/столбцы
+    return !(this.is_column_first.bind(this.baseObj)())
+  }
+
+  //Столбец стоящий первый в подзаголовке имеющий/не имеющий под заголовки уровнем ниже
+  is_column_first() {
+    //если карта не построена - значит столбец на самом нижнем уровне
+    if(!this.headerMap.has(this.checkName)) {
+      //массив первых столбцов, начиная со столбца уровнем выше
+      let _resultCols = []
+
+      //собираем первые столбцы подзаголовков
+      this.headerMap.forEach((value) => value.cols.includes(this.checkId) && _resultCols.push(value.cols[0]))
+
+      //смотрим по совпадению первой колонки на самом нижнем уровне
+      return _resultCols[_resultCols.length - 1] === this.checkId
+    } else {
+      //иначе если карта построена - значит есть подзаголовки, проверяем признак первой колонки
+      return this.headerMap.get(this.checkName).isFirst
+    }
+  }
+
+}
+
+//Событие перед тем как отпустить колонку
+class beforeDropEvent extends events {
+
+  //контруктор входящих данных
+  constructor(table, event) {
+    //переопределение базового конктруктора
+    super(table, event)
+    //вешаем событие
+    this.table.attachEvent('onBeforeColumnDrop', this.on_before_column_drop.bind(this))
+  }
+
+  on_before_column_drop(_, target, event) {
+    
+    //идентификатор взятой колонки
+    this.baseObj.targetColId = target
+
+    //сохраняем название взятой колонки
+    this.baseObj.targetColName = event?.target?.outerText
+
+    //устанавливае тип + проверяемую колонку
+    this.baseObj.selectedCheckType = this.checkType.target
+
+    //сохранение состояния таблицы перед переносом колонки
+    this.baseObj.oldTableState = this.baseObj.table.getState()
+
+    //определяем стартовую позицию взятой колонки
+    this.identify_column_start_position.bind(this.baseObj)()
+
+    //массив переносимых колонок
+    this.baseObj.currentMoveColList = this.baseObj.headerMap.get(this.baseObj.currentColName)?.cols || [this.baseObj.currentColId]
+
+    //сохраняем конфиги перед переносом
+    this.collect_and_save_move_columns_configs.bind(this.baseObj)()
+
+    //проверка на возможность переноса
+    const _is_target_wrong = this.is_target_wrong()
+
+    if(_is_target_wrong) {
+      //урезаем colspan, если перетаскивается последняя колонка с подзаголовками
+      this.reduce_callspan.bind(this.baseObj)()
+    }
+
+    return _is_target_wrong
+  }
+
+  //сбрасываем колспан, в конце он вернется
+  reduce_callspan = () => this.visibleColumnsConfigList.forEach((cfg) => cfg.header.forEach((hdr) => hdr && hdr.colspan && (delete hdr.colspan)))
+
+  //сохраняем конфиги всех видимых колонок
+  collect_and_save_move_columns_configs(obj = {}) {
+    this.visibleColumnsList.forEach((col) => obj[col] = this.table.getColumnConfig(col))
+    this.oldColListConfigs = JSON.parse(JSON.stringify(obj))
+  }
+
+  //проверка на то, является ли целевая колонка запрещенной для переноса на нее
+  is_target_wrong() {
+    //контекст
+    const _ctx = this.baseObj
+
+    //проверяемая колонка
+    _ctx.selectedCheckType = _ctx.checkType.current
+
+    //колонки, на которые возможно перенести
+    this.get_available_columns_to_drop_on.bind(_ctx)()
+
+    //проверка целевой колонки, 0 - самый верхний уровень, можно переносить в любое место
+    return !(!_ctx.availableToDropColList?.includes(_ctx.targetColId) && +_ctx.headerMap.get(_ctx.checkName)?.level !== 0)
+  }
+
+  //список доступных колонок для переноса на нее
+  get_available_columns_to_drop_on() {
+
+    //если не построена карта, значит у столбца нет подзаголовков
+    if(!this.headerMap.has(this.checkName)) {
+      let _resultCols = []
+
+      //перебираем столбцы, у которых есть подзаголовки
+      this.headerMap.forEach((value, key) => {
+        let _firstCols = []
+
+        //если в подзаголовках есть выбранный столбец к перемещению
+        if(value.cols.includes(this.checkId)) {
+          let _col = JSON.parse(JSON.stringify(value.cols))
+
+          //сохраняем родительское наименования колонки
+          this.parentColName = key
+
+          //первый подзаголовок с подзаголовками по родителю
+          this.headerMap.forEach((v) => v.isFirst && v.parent === key && (_firstCols = v.cols))
+
+          //если есть подзаголовок с подзаголовками, то берем допустимые столбцы к перемещению на них
+          if(_firstCols.length > 0) {
+            _col = _col.filter((col) => !_firstCols.includes(col) && col !== this.checkId)
+          } else {
+            //иначе удаляем текущий элемент и первый, т.е так же допустимые столбцы к перемещению на них
+            _col.remove(this.checkId)
+            _col = _col.slice(1)
+          }
+
+          //кладем в резултирующий набор
+          _resultCols.push(_col)
+
+        }
+      })
+
+      //берем результат на самом нижнем уровне
+      this.availableToDropColList = _resultCols[_resultCols.length - 1]
+
+      return
+    } 
+    
+    //если карта построена, значит у столбца подзаголовки уровнем ниже. Проверяем столбцы не на самом верхнем уровне
+    let _current = this.headerMap.get(this.checkName)
+    if(_current && _current.level !== 0) {
+      //все колонки по родителю
+      let _parentCols = this.headerMap.get(_current.parent).cols
+      //первые колонки уровнем ниже
+      let _firstCols = []
+      //результирующий набор
+      let _resultCols = []
+
+      //сохраняем родительское наименования колонки
+      this.parentColName = _current.parent
+
+      //собираем первый столбец/столбцы с подзаголовками/без у родителя
+      this.headerMap.forEach((v) => v.isFirst && v.parent === _current.parent && (_firstCols = v.cols))
+
+      //результирующий набор без текущей колонки/колонок + без первых/первой колонок/колонки
+      _resultCols = _parentCols.filter((col) => !_firstCols.includes(col) && !_current.cols.includes(col))
+
+      //заполняем допустимые к перемещению на них
+      this.availableToDropColList = _firstCols.length > 0 ? _resultCols : _resultCols.slice(1)
+
+      return 
+    }
+
+  }
+
+  //определяем стартовую позицию взятой колонки
+  identify_column_start_position() {
+    this.startPosition = this.get_col_index(this.currentColId) > this.get_col_index(this.targetColId) ? this.startPositionType.right : this.startPositionType.left
+  }
+
+}
+
+//Событие после того как колонка отпущена
+class afterDropEvent extends events {
+
+  //контруктор входящих данных
+  constructor(table, event) {
+    //переопределение базового конктруктора
+    super(table, event)
+    //вешаем событие
+    this.table.attachEvent('onAfterColumnDrop', this.put_column_on_right_place.bind(this.baseObj))
+  }
+
+  //делаем перемещение колонки в нужное место
+  put_column_on_right_place() {
+    //состояние таблицы перед переносом
+    let _old_state = this.oldTableState
+    //список переносимых колонок
+    let _move_cols = this.currentMoveColList
+    //список целевых колонок
+    let _target_cols = []
+    //уровень текущей колонки
+    const _current_level = this.headerMap.get(this.currentColName)?.level
+    //кол-во закрепленных столбцов слева
+    const _left_split = this.table.config.leftSplit
+    //кол-во закрепленных столбцов слева
+    const _right_split = this.table.config.rightSplit
+
+    //заголовки верхнего уровня
+    _current_level === 0 && this.headerMap.forEach((v) => +v.level === 0 && v.cols.includes(this.targetColId) && (_target_cols = v.cols))
+      
+    //столбцы с подзаголовками
+    !_target_cols.length && this.headerMap.forEach((v) => v.parent === this.parentColName && v.cols.includes(this.targetColId) && (_target_cols = v.cols))
+      
+    //столбец на самом нижнем уровне
+    !_target_cols.length && _target_cols.push(this.targetColId)
+
+    //сбрасывем leftSplit при переносе на закрепленную колонку, иначе крашится
+    if(_left_split && this.oldTableState.ids.slice(0, _left_split).some((col) => _target_cols.includes(col))) {
+      this.table.config.leftSplit = 0
+    }
+
+    //сбрасывем rightSplit при переносе на закрепленную колонку, иначе крашится
+    if(_right_split && this.oldTableState.ids.slice(this.oldTableState.ids.length - _right_split).some((c) => _target_cols.includes(c))) {
+      this.table.config.rightSplit = 0
+    }
+
+    /** Общее перемещение с учетом скытых колонок */
+    //удаляем текущую колонку/колонки
+    const _delete_start_index = _old_state.order.indexOf(_move_cols[0])
+    _old_state.order.splice(_delete_start_index, _move_cols.length)
+
+    //индекс начала вставки
+    let _put_start_index = 0
+
+    if(this.startPosition === this.startPositionType.right) {
+      _put_start_index = _old_state.order.indexOf(_target_cols[0])
+    } else if(this.startPosition === this.startPositionType.left) {
+      _put_start_index = _old_state.order.indexOf(_target_cols[_target_cols.length - 1]) + 1
+    }
+
+    //добавляем в нужное место перемещаемые колонки
+    _old_state.order.splice(_put_start_index, 0, ..._move_cols)
+
+    /** Перемещение колонок/размеров только видимых колонок */
+    if(this.startPosition === this.startPositionType.right) {
+      _put_start_index = _target_cols.map((col) => _old_state.ids.indexOf(col)).filter((ind) => ind >= 0)[0]
+    }
+
+    //перебираем переносимые колонки с конца
+    _move_cols.reverse().forEach((col) => {
+      //индекс
+      const _index = _old_state.ids.indexOf(col)
+
+      //если индекс >= 0 значит колонка не скрыта
+      if(_index >= 0)  {
+        //размер колонки
+        const _size = _old_state.size[_index]
+
+        //удаляем из старого положения
+        _old_state.size.splice(_index, 1)
+        _old_state.ids.splice(_index, 1)
+
+        //переопределяем стартовую позицию при перемещении слева на право
+        if(this.startPosition === this.startPositionType.left) {
+          const _filtered_cols = _target_cols.map((col) => _old_state.ids.indexOf(col)).filter((ind) => ind >= 0)
+          _put_start_index = _filtered_cols[_filtered_cols.length - 1] + 1
+        }
+
+        //добавляем на новое место
+        _old_state.ids.splice(_put_start_index, 0, col)
+        _old_state.size.splice(_put_start_index, 0, _size)
+      }
+
+    })
+
+    //устанавливаем состояние
+    this.table.setState(_old_state)
+
+    //устанавливаем заголовки, которые почему то вебикс сбрасывает + восстанавливаем сброшенный colspan
+    for(let i = 0; i < this.table.config.columns.length; i++) {
+      this.table.config.columns[i].header = this.oldColListConfigs[this.table.config.columns[i].id].header
+    }
+
+    //обновляем колонки
+    this.table.refreshColumns()
+
+    //перестраиваем карту заголовков
+    this.make_headers_map()
+  }
+
+}
+
